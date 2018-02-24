@@ -864,13 +864,40 @@ arv_gv_device_auto_packet_size (ArvGvDevice *gv_device)
 	return packet_size;
 }
 
+static char ** example_thread(const char* filename){ 
+  char **tokens = NULL;
+  GRegex *arv_gv_device_url_regex;
+  GMatchInfo *match_info;
+  gint num_substrings_to_fetch, index;
+  printf("Inside\n");
+  //tokens = g_regex_split (arv_gv_device_get_url_regex() , filename, (GRegexMatchFlags)0);
+  //arv_gv_device_url_regex = g_regex_new ("^(local:|file:|http:)(.+\\.[^;]+);?(?:0x)?([0-9:a-f]*)?;?(?:0x)?([0-9:a-f]*)?$",
+  //               G_REGEX_CASELESS, (GRegexMatchFlags)0, NULL);
+  arv_gv_device_url_regex = g_regex_new ("^(local:|file:|http:)(.+\\.[^;]+);?(?:0x)?([0-9:a-f]*)?;?(?:0x)?([0-9:a-f]*)?$", G_REGEX_CASELESS, (GRegexMatchFlags)0, NULL);
+  printf("Inside 2\n");
+  if(g_regex_match (arv_gv_device_url_regex, filename, (GRegexMatchFlags)0, &match_info)){
+    printf("%s\n", g_match_info_get_string(match_info));
+    printf("%d\n", g_regex_get_capture_count (arv_gv_device_url_regex));
+    num_substrings_to_fetch = g_match_info_get_match_count(match_info);
+    printf("Got %d substrings\n", num_substrings_to_fetch);
+    for(index = 1; index < num_substrings_to_fetch; index++){
+      gchar *word = g_match_info_fetch (match_info, index);
+      g_print ("Found: %s\n", word);
+    }
+  }
+  g_match_info_free (match_info);
+  //printf("%s %s %s %s %s %s\n", tokens[0], tokens[1], tokens[2], tokens[3], tokens[4], tokens[5]);
+  return tokens;
+}
+
 static char *
 _load_genicam (ArvGvDevice *gv_device, guint32 address, size_t  *size)
 {
 	char filename[ARV_GVBS_XML_URL_SIZE];
 	char **tokens;
 	char *genicam = NULL;
-
+  GThread *gexamplethread;
+  
 	g_return_val_if_fail (size != NULL, NULL);
 
 	*size = 0;
@@ -881,19 +908,32 @@ _load_genicam (ArvGvDevice *gv_device, guint32 address, size_t  *size)
 	filename[ARV_GVBS_XML_URL_SIZE - 1] = '\0';
 
 	arv_debug_device ("[GvDevice::load_genicam] xml url = '%s' at 0x%x", filename, address);
+  printf ("[GvDevice::load_genicam] xml url = '%s' at 0x%x\n", filename, address);
+	//tokens = g_regex_split (arv_gv_device_get_url_regex() , filename, 0);
 
-	tokens = g_regex_split (arv_gv_device_get_url_regex (), filename, 0);
-
+  gexamplethread = g_thread_new("example thread", &example_thread, filename);
+  tokens = g_thread_join(gexamplethread);
+	//printf("%s %s %s %s %s %s\n", tokens[0], tokens[1], tokens[2], tokens[3], tokens[4], tokens[5]);
+  if(tokens == NULL){
+    return NULL;
+  }
+  printf("Debug point 51\n");
 	if (tokens[0] != NULL && tokens[1] != NULL) {
+		printf("Debug point 51.5\n");
 		if (g_ascii_strcasecmp (tokens[1], "file:") == 0) {
 			gsize len;
 			g_file_get_contents (tokens[2], &genicam, &len, NULL);
+			printf("Debug point 52\n");
 			if (genicam)
+			{
 				*size = len;
+				printf("Debug point 53\n");
+			}	
 		} else if (g_ascii_strcasecmp (tokens[1], "local:") == 0 &&
 			 tokens[2] != NULL &&
 			 tokens[3] != NULL &&
 			 tokens[4] != NULL) {
+		  printf("Debug point 54\n");
 			guint32 file_address;
 			guint32 file_size;
 
@@ -902,6 +942,8 @@ _load_genicam (ArvGvDevice *gv_device, guint32 address, size_t  *size)
 
 			arv_debug_device ("[GvDevice::load_genicam] Xml address = 0x%x - size = 0x%x - %s",
 					  file_address, file_size, tokens[2]);
+			printf ("[GvDevice::load_genicam] Xml address = 0x%x - size = 0x%x - %s\n",
+								  file_address, file_size, tokens[2]);
 
 			if (file_size > 0) {
 				genicam = g_malloc (file_size);
@@ -910,7 +952,6 @@ _load_genicam (ArvGvDevice *gv_device, guint32 address, size_t  *size)
 
 					if (arv_debug_check (&arv_debug_category_misc, ARV_DEBUG_LEVEL_LOG)) {
 						GString *string = g_string_new ("");
-
 						g_string_append_printf (string,
 									"[GvDevice::load_genicam] Raw data size = 0x%x\n", file_size);
 						arv_g_string_append_hex_dump (string, genicam, file_size);
@@ -955,26 +996,34 @@ _load_genicam (ArvGvDevice *gv_device, guint32 address, size_t  *size)
 		} else if (g_ascii_strcasecmp (tokens[1], "http:") == 0) {
 			GFile *file;
 			GFileInputStream *stream;
-
+      printf("Debug point 55\n");
 			file = g_file_new_for_uri (filename);
 			stream = g_file_read (file, NULL, NULL);
 			if(stream) {
 				GDataInputStream *data_stream;
 				gsize len;
-
+        printf("Debug point 56\n");
 				data_stream = g_data_input_stream_new (G_INPUT_STREAM (stream));
+				printf("Debug point 57\n");
 				genicam = g_data_input_stream_read_upto (data_stream, "", 0, &len, NULL, NULL);
+				printf("Debug point 58\n");
 
-				if (genicam)
+				if (genicam){
+					printf("Debug point 59\n");
 					*size = len;
+				}
+					
 
 				g_object_unref (data_stream);
 				g_object_unref (stream);
+				printf("Debug point 60\n");
 			}
+			printf("Debug point 61\n");
 			g_object_unref (file);
 		}
+		printf("Debug point 62\n");
 	}
-
+  printf("Debug point 63\n");
 	g_strfreev (tokens);
 
 	return genicam;
